@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { Camera, Mic } from "lucide-react";
+import './App.css';
 
 export default function App() {
   const [step, setStep] = useState("landing"); // landing | upload | analyzing | insight
@@ -11,6 +12,9 @@ export default function App() {
   const [uploadedId, setUploadedId] = useState(null);
   const [uploadedMeta, setUploadedMeta] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Base URL for API requests (can be set via REACT_APP_API_URL)
+  const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3002';
 
   useEffect(() => {
     return () => {
@@ -44,8 +48,6 @@ export default function App() {
     setProgress(0);
     setError(null);
 
-    // Use REACT_APP_API_URL if provided, otherwise default to the local server on port 3003
-    const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3003';
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_BASE}/upload`);
     xhr.upload.onprogress = (ev) => {
@@ -65,7 +67,6 @@ export default function App() {
         if (data && data.success && data.id) {
           setUploadedId(data.id);
           // fetch metadata for the uploaded image from server
-          const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3003';
           fetch(`${API_BASE}/images/${data.id}`)
             .then((r) => r.json())
             .then((meta) => setUploadedMeta(meta))
@@ -96,6 +97,8 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-gray-50 flex items-center justify-center p-6">
       <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl overflow-hidden">
+        {/* slow slide-up entrance for the card */}
+        <div className="slide-up-slow" />
         {/* Header */}
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div className="font-semibold text-emerald-700">LabelSense AI</div>
@@ -129,7 +132,7 @@ export default function App() {
                 </h2>
 
                 <div
-                  className="border-2 border-dashed border-emerald-200 rounded-xl p-6 mb-4 cursor-pointer"
+                  className="border-2 border-dashed border-emerald-200 rounded-xl p-6 mb-4 cursor-pointer slide-up"
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={(e) => {
                     e.preventDefault();
@@ -151,7 +154,7 @@ export default function App() {
 
                 {preview && (
                   <div className="mb-4">
-                    <img src={preview} alt="preview" className="mx-auto rounded-md max-h-48" />
+                    <img src={preview} alt="preview" className="mx-auto rounded-md max-h-48 slide-up-delay-200" />
                   </div>
                 )}
 
@@ -202,18 +205,18 @@ export default function App() {
             </div>
           )}
 
-          {step === "insight" && (
-            <div>
+              {step === "insight" && (
+            <div className="slide-up-slow slide-up-delay-200">
               <h2 className="text-sm font-semibold text-gray-700 mb-3">
                 You’re asking about this product
               </h2>
 
-              <div className="bg-emerald-50 rounded-xl p-4 text-sm text-gray-700 mb-4">
+              <div className="bg-emerald-50 rounded-xl p-4 text-sm text-gray-700 mb-4 slide-up">
                 For children, it’s generally better to limit products with higher added sugar.
                 Occasional use is okay, but daily consumption isn’t recommended.
               </div>
 
-              <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 mb-6">
+              <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 mb-6 slide-up slide-up-delay-200">
                 If reducing sugar intake matters to you, this product may not be ideal for daily use.
                 Occasional consumption is likely fine.
               </div>
@@ -233,7 +236,7 @@ export default function App() {
                     <p className="text-xs text-gray-600">Size: {uploadedMeta.size} bytes</p>
                     {uploadedMeta.filename && (
                       <div className="mt-2">
-                        <img src={`${process.env.REACT_APP_API_URL || 'http://localhost:3003'}/uploads/${uploadedMeta.filename}`} alt="uploaded" className="max-h-40 rounded-md" />
+                        <img src={`${API_BASE}/uploads/${uploadedMeta.filename}`} alt="uploaded" className="max-h-40 rounded-md" />
                       </div>
                     )}
                   </div>

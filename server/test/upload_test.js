@@ -16,7 +16,7 @@ let body = Buffer.concat([
 
 const options = {
   hostname: 'localhost',
-  port: 3003,
+  port: 3002,
   path: '/upload',
   method: 'POST',
   headers: {
@@ -38,7 +38,7 @@ const req = http.request(options, (res) => {
       if (json && json.success && json.id) {
         const getOptions = {
           hostname: 'localhost',
-          port: 3003,
+          port: 3002,
           path: `/images/${json.id}`,
           method: 'GET',
         };

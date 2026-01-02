@@ -74,6 +74,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err && err.message ? err.message : 'Internal server error' });
 });
 
-// Use port 3003 by default per project configuration (can be overridden via PORT env var)
-const PORT = process.env.PORT || 3003;
+// Use port 3002 by default so it doesn't conflict with the React dev server on 3000.
+// Can still be overridden via the PORT env var.
+const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => console.log(`Server listening on ${PORT}`));

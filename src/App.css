@@ -36,3 +36,49 @@
     transform: rotate(360deg);
   }
 }
+
+/* Slide-up animations for subtle, slow entrance effects */
+@keyframes slideUp {
+  0% {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.slide-up {
+  animation-name: slideUp;
+  animation-duration: 700ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation-fill-mode: both;
+}
+
+.slide-up-slow {
+  animation-name: slideUp;
+  animation-duration: 1100ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+  animation-fill-mode: both;
+}
+
+.slide-up-delay-200 {
+  animation-delay: 200ms;
+}
+
+.slide-up-delay-350 {
+  animation-delay: 350ms;
+}
+
+/* Respect reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  .slide-up,
+  .slide-up-slow,
+  .slide-up-delay-200,
+  .slide-up-delay-350 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}
