@@ -8,6 +8,8 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(null);
+  const [uploadedId, setUploadedId] = useState(null);
+  const [uploadedMeta, setUploadedMeta] = useState(null);
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -32,6 +34,8 @@ export default function App() {
     setPreview(null);
     setProgress(0);
     setError(null);
+    setUploadedId(null);
+    setUploadedMeta(null);
   }
 
   function handleUpload() {
@@ -40,20 +44,43 @@ export default function App() {
     setProgress(0);
     setError(null);
 
+    // Use REACT_APP_API_URL if provided, otherwise default to the local server on port 3003
+    const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3003';
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', 'http://localhost:4000/upload');
+    xhr.open('POST', `${API_BASE}/upload`);
     xhr.upload.onprogress = (ev) => {
       if (ev.lengthComputable) setProgress(Math.round((ev.loaded / ev.total) * 100));
     };
     xhr.onload = () => {
       setUploading(false);
       if (xhr.status >= 200 && xhr.status < 300) {
+        // parse response JSON to obtain DB id
+        let data = null;
+        try {
+          data = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+        } catch (err) {
+          console.error('Failed to parse upload response', err);
+        }
+
+        if (data && data.success && data.id) {
+          setUploadedId(data.id);
+          // fetch metadata for the uploaded image from server
+          const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3003';
+          fetch(`${API_BASE}/images/${data.id}`)
+            .then((r) => r.json())
+            .then((meta) => setUploadedMeta(meta))
+            .catch((err) => console.error('Failed to fetch uploaded image metadata', err));
+        }
+
         // go to analyzing to keep flow consistent
         setStep('analyzing');
         // simulate a short analysis then show insight
         setTimeout(() => setStep('insight'), 1200);
       } else {
-        setError(`Upload failed: ${xhr.status} ${xhr.statusText}`);
+        // Show server response body (helpful when server returns JSON error)
+        const body = xhr.responseText ? ` - ${xhr.responseText}` : '';
+        console.error('Upload failed', xhr.status, xhr.statusText, xhr.responseText);
+        setError(`Upload failed: ${xhr.status} ${xhr.statusText}${body}`);
       }
     };
     xhr.onerror = () => {
@@ -195,6 +222,23 @@ export default function App() {
                 <Mic className="text-emerald-600" size={20} />
                 <span className="text-gray-500 text-xs">Ask naturally — I’m listening</span>
               </div>
+
+              {/* Show uploaded image metadata and server-hosted image if available */}
+              {uploadedMeta && (
+                <div className="mt-4">
+                  <h3 className="text-xs text-gray-500 mb-2">Uploaded image (server)</h3>
+                  <div className="bg-white border rounded-md p-3">
+                    <p className="text-xs text-gray-600">Original name: {uploadedMeta.originalname}</p>
+                    <p className="text-xs text-gray-600">MIME: {uploadedMeta.mimetype}</p>
+                    <p className="text-xs text-gray-600">Size: {uploadedMeta.size} bytes</p>
+                    {uploadedMeta.filename && (
+                      <div className="mt-2">
+                        <img src={`${process.env.REACT_APP_API_URL || 'http://localhost:3003'}/uploads/${uploadedMeta.filename}`} alt="uploaded" className="max-h-40 rounded-md" />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

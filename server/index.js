@@ -19,12 +19,26 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 const app = express();
-app.use(cors({ origin: 'http://localhost:3000' }));
+// Allow requests from any origin during development to avoid CORS issues.
+// In production, restrict this to your known frontend origin(s).
+app.use(cors());
 app.use(express.json());
 
+// Basic request logging for debugging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} ${req.method} ${req.url}`);
+  next();
+});
+
 app.post('/upload', upload.single('image'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  if (!req.file) {
+    console.warn('Upload attempted with no file');
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+
   const file = req.file;
+  console.log(`Upload received: ${file.originalname} (${file.mimetype}, ${file.size} bytes) -> ${file.path}`);
+
   try {
     const id = await db.insertImage({
       filename: file.filename,
@@ -35,8 +49,9 @@ app.post('/upload', upload.single('image'), async (req, res) => {
     });
     res.json({ success: true, id });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('Error inserting image into DB:', err && err.message ? err.message : err);
+    // Return the error message in development for easier debugging
+    res.status(500).json({ error: err && err.message ? err.message : 'Internal server error' });
   }
 });
 
@@ -53,5 +68,12 @@ app.get('/images/:id', async (req, res) => {
 
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-const PORT = process.env.PORT || 4000;
+// Global error handler to surface multer/other errors as JSON
+app.use((err, req, res, next) => {
+  console.error('Unhandled server error:', err && err.message ? err.message : err);
+  res.status(500).json({ error: err && err.message ? err.message : 'Internal server error' });
+});
+
+// Use port 3003 by default per project configuration (can be overridden via PORT env var)
+const PORT = process.env.PORT || 3003;
 app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
