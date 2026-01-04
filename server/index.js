@@ -5,6 +5,14 @@ const fs = require('fs');
 const cors = require('cors');
 const db = require('./db');
 
+// Load .env into process.env (OPENAI_API_KEY, USE_EXTERNAL_LLM, PORT, etc.)
+try {
+  require('dotenv').config();
+} catch (e) {
+  // dotenv is optional in environments where env vars are already provided
+  console.warn('dotenv not loaded (it may not be installed)');
+}
+
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -170,6 +178,20 @@ app.post('/chat', async (req, res) => {
     console.error('Chat handling error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// Health endpoint: reports basic server status and LLM configuration (no secrets)
+app.get('/health', (req, res) => {
+  const llmEnabled = process.env.USE_EXTERNAL_LLM === 'true' || process.env.USE_EXTERNAL_LLM === '1';
+  const llmConfigured = !!process.env.OPENAI_API_KEY;
+  res.json({
+    ok: true,
+    llmEnabled,
+    llmConfigured,
+    preferredPorts,
+    pid: process.pid,
+    uptimeSeconds: Math.round(process.uptime()),
+  });
 });
 
 app.use('/uploads', express.static(UPLOAD_DIR));
