@@ -194,6 +194,22 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Diagnostic endpoint to test external LLM connectivity and configuration
+app.get('/llm-test', async (req, res) => {
+  const llmEnabled = process.env.USE_EXTERNAL_LLM === 'true' || process.env.USE_EXTERNAL_LLM === '1';
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!llmEnabled) return res.status(400).json({ error: 'LLM is disabled. Set USE_EXTERNAL_LLM=true to enable.' });
+  if (!apiKey) return res.status(400).json({ error: 'OPENAI_API_KEY is not configured.' });
+
+  try {
+    const reply = await callExternalLLM('Is this product high in added sugars? Answer briefly using food/health terms only.', null);
+    res.json({ ok: true, reply });
+  } catch (err) {
+    console.error('LLM test error:', err && err.message ? err.message : err);
+    res.status(500).json({ error: err && err.message ? err.message : 'LLM test failed' });
+  }
+});
+
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 // Global error handler to surface multer/other errors as JSON
@@ -203,8 +219,8 @@ app.use((err, req, res, next) => {
 });
 
 // Attempt to bind to an available port from a preferred list (env PORT, 3000, 3002, 4000).
-// This helps avoid accidental conflicts with the React dev server and supports multiple dev setups.
-const preferredPorts = [process.env.PORT ? Number(process.env.PORT) : null, 3002, 4000].filter(Boolean);
+// By default we prefer port 3000 as requested; if it's in use we'll fall back to 3002 or 4000.
+const preferredPorts = [process.env.PORT ? Number(process.env.PORT) : null, 3000, 3002, 4000].filter(Boolean);
 
 (async function startServer() {
   for (const port of preferredPorts) {
