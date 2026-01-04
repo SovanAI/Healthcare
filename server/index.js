@@ -66,6 +66,112 @@ app.get('/images/:id', async (req, res) => {
   }
 });
 
+// Return chats for a given image id
+app.get('/chats', async (req, res) => {
+  const imageId = req.query.imageId;
+  if (!imageId) return res.status(400).json({ error: 'imageId query param required' });
+  try {
+    const chats = await db.getChatsByImage(imageId);
+    res.json(chats);
+  } catch (err) {
+    console.error('Failed to fetch chats:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Helper: call external LLM (OpenAI) if configured
+async function callExternalLLM(message, image) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+  // system prompt restricts scope to food/nutrition/ingredients/health
+  const systemPrompt = `You are an assistant that only answers user questions about food, ingredients, nutrition, and general health-related food guidance (e.g., sugar, allergens, diet suitability). Do NOT provide medical diagnoses, professional medical advice, or answer questions outside this domain. If the user asks about unrelated topics, reply briefly that you can only help with food and health related questions.`;
+
+  const context = image ? `Uploaded product: ${image.originalname} (mime: ${image.mimetype}, size: ${image.size} bytes).` : 'No uploaded product context.';
+
+  const userPrompt = `${context}\nUser question: ${message}`;
+
+  const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.2,
+      max_tokens: 400,
+    }),
+  });
+
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error(`LLM request failed: ${resp.status} ${resp.statusText} - ${txt}`);
+  }
+
+  const j = await resp.json();
+  const content = j?.choices?.[0]?.message?.content?.trim();
+  return content;
+}
+
+// Simple chat endpoint: record user message and return a bot reply (and persist it)
+app.post('/chat', async (req, res) => {
+  const { message, imageId } = req.body || {};
+  if (!message) return res.status(400).json({ error: 'message required' });
+
+  try {
+    // insert user message
+    await db.insertChat({ imageId: imageId || null, role: 'user', text: message });
+
+    let reply = null;
+
+    // If configured, call the external LLM for a reply
+    if (process.env.USE_EXTERNAL_LLM === 'true' || process.env.USE_EXTERNAL_LLM === '1') {
+      try {
+        const img = imageId ? await db.getImage(imageId) : null;
+        const llmResp = await callExternalLLM(message, img);
+
+        // Basic domain filter: ensure the reply mentions a food/health keyword, otherwise refuse
+        const allowedKeywords = ['food','nutrition','ingredient','sugar','fat','calories','allergen','vitamin','protein','carb','sodium','cholesterol','diet','health','allergy','ingredient'];
+        const lc = (llmResp || '').toLowerCase();
+        if (!allowedKeywords.some(k => lc.includes(k))) {
+          reply = 'I can only answer food and health related questions — please ask a question about ingredients, nutrition, or dietary concerns.';
+        } else {
+          reply = llmResp;
+        }
+      } catch (err) {
+        console.error('LLM error:', err && err.message ? err.message : err);
+        reply = 'Sorry, I could not reach the external assistant; I can still help with basic food-related answers.';
+      }
+    }
+
+    // Fallback simple reply when LLM disabled
+    if (!reply) {
+      reply = `Thanks — I received your message: "${message}".`;
+      if (imageId) {
+        const img = await db.getImage(imageId);
+        if (img) {
+          reply = `I reviewed the uploaded image (${img.originalname}). ${reply}`;
+        } else {
+          reply = `I couldn't find the uploaded image, but ${reply}`;
+        }
+      }
+    }
+
+    // insert bot reply
+    await db.insertChat({ imageId: imageId || null, role: 'bot', text: reply });
+
+    res.json({ success: true, reply });
+  } catch (err) {
+    console.error('Chat handling error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.use('/uploads', express.static(UPLOAD_DIR));
 
 // Global error handler to surface multer/other errors as JSON
@@ -74,7 +180,30 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err && err.message ? err.message : 'Internal server error' });
 });
 
-// Use port 3002 by default so it doesn't conflict with the React dev server on 3000.
-// Can still be overridden via the PORT env var.
-const PORT = process.env.PORT || 3002;
-app.listen(PORT, () => console.log(`Server listening on ${PORT}`));
+// Attempt to bind to an available port from a preferred list (env PORT, 3000, 3002, 4000).
+// This helps avoid accidental conflicts with the React dev server and supports multiple dev setups.
+const preferredPorts = [process.env.PORT ? Number(process.env.PORT) : null, 3002, 4000].filter(Boolean);
+
+(async function startServer() {
+  for (const port of preferredPorts) {
+    try {
+      await new Promise((resolve, reject) => {
+        const server = app.listen(port)
+          .on('listening', () => {
+            console.log(`Server listening on ${port}`);
+            resolve(server);
+          })
+          .on('error', (err) => reject(err));
+      });
+      // If we've started successfully, break out of the loop
+      break;
+    } catch (err) {
+      if (err && err.code === 'EADDRINUSE') {
+        console.warn(`Port ${port} in use, trying next port...`);
+        continue;
+      }
+      console.error('Failed to start server:', err);
+      process.exit(1);
+    }
+  }
+})();

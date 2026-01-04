@@ -14,6 +14,8 @@ export default function App() {
   const fileInputRef = useRef(null);
 
   // Base URL for API requests (can be set via REACT_APP_API_URL)
+  // Default to the backend that runs separately (e.g. http://localhost:3002). You can override by
+  // setting REACT_APP_API_URL in a .env file or your shell.
   const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:3002';
 
   useEffect(() => {
@@ -71,6 +73,14 @@ export default function App() {
             .then((r) => r.json())
             .then((meta) => setUploadedMeta(meta))
             .catch((err) => console.error('Failed to fetch uploaded image metadata', err));
+
+          // fetch prior chats for this image and populate chat window
+          fetch(`${API_BASE}/chats?imageId=${data.id}`)
+            .then((r) => r.json())
+            .then((chats) => {
+              if (Array.isArray(chats) && chats.length) setMessages(chats.map((c) => ({ role: c.role, text: c.text })));
+            })
+            .catch((err) => console.error('Failed to fetch chats for uploaded image', err));
         }
 
         // go to analyzing to keep flow consistent
@@ -86,13 +96,54 @@ export default function App() {
     };
     xhr.onerror = () => {
       setUploading(false);
-      setError('Upload failed due to a network error');
+      console.error('Network error uploading to', API_BASE);
+      setError(`Upload failed due to a network error. Is the backend running at ${API_BASE}?`);
     };
 
     const form = new FormData();
     form.append('image', file);
     xhr.send(form);
   }
+
+  // Chat state and handlers for insight page
+  const [messages, setMessages] = useState([
+    { role: 'bot', text: 'Hi — ask a question about this product and I will help.' }
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const chatListRef = useRef(null);
+
+  async function sendChat() {
+    const text = chatInput.trim();
+    if (!text) return;
+    const userMsg = { role: 'user', text };
+    setMessages((s) => [...s, userMsg]);
+    setChatInput('');
+
+    try {
+      const r = await fetch(`${API_BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, imageId: uploadedId }),
+      });
+      const j = await r.json();
+      if (r.ok && j && j.success) {
+        setMessages((s) => [...s, { role: 'bot', text: j.reply }]);
+      } else {
+        const msg = j && j.error ? j.error : `Chat failed: ${r.status} ${r.statusText}`;
+        setMessages((s) => [...s, { role: 'bot', text: msg }]);
+      }
+    } catch (err) {
+      console.error('Chat request failed', err);
+      setMessages((s) => [...s, { role: 'bot', text: 'Network error sending chat to server' }]);
+    }
+  }
+
+  useEffect(() => {
+    // scroll chat to bottom when messages change
+    if (chatListRef.current) {
+      chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+    }
+  }, [messages]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-gray-50 flex items-center justify-center p-6">
@@ -219,6 +270,31 @@ export default function App() {
               <div className="bg-gray-50 rounded-xl p-4 text-sm text-gray-600 mb-6 slide-up slide-up-delay-200">
                 If reducing sugar intake matters to you, this product may not be ideal for daily use.
                 Occasional consumption is likely fine.
+              </div>
+
+              {/* Chat output window */}
+              <div className="border rounded-xl p-4 bg-white mb-4">
+                <div className="text-xs text-gray-500 mb-3">Chat with the insight assistant</div>
+                <div ref={chatListRef} className="h-40 overflow-y-auto space-y-3 px-1" id="chat-list">
+                  {messages.map((m, i) => (
+                    <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[80%] px-3 py-2 rounded-lg ${m.role === 'user' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
+                        <div className="text-sm">{m.text}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && sendChat()}
+                    placeholder="Ask a question about this product..."
+                    className="flex-1 border rounded-full px-4 py-2 text-sm"
+                  />
+                  <button onClick={sendChat} className="bg-emerald-600 text-white px-4 py-2 rounded-full text-sm">Send</button>
+                </div>
               </div>
 
               <div className="flex items-center gap-3 bg-white border rounded-full px-4 py-2 shadow">
